@@ -1,2 +1,3 @@
-# Initial commit
-Ubačeni modeli
+# Dodat skybox
+
+Obavezan deo i cubemaps gotovi
