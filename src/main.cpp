@@ -15,6 +15,7 @@
 #include <learnopengl/model.h>
 
 #include <iostream>
+#include <string>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -25,6 +26,9 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
+
+unsigned int loadTexture(const char *path);
+
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -40,16 +44,7 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-struct PointLight {
-    glm::vec3 position;
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
 
-    float constant;
-    float linear;
-    float quadratic;
-};
 
 struct DirLight {
     glm::vec3 direction;
@@ -59,15 +54,16 @@ struct DirLight {
     bool on;
 };
 
+float dirOn = 1.0f;
+float sptOn = 1.0f;
+bool blinn = true;
+
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 backpackPosition = glm::vec3(0.0f);
-    float backpackScale = 1.0f;
-    PointLight pointLight;
-    DirLight dirLight;
+
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
 
@@ -124,7 +120,7 @@ int main() {
 
     // glfw window creation
     // --------------------
-    GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Race about to start", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -168,17 +164,45 @@ int main() {
     // -----------------------------
     glEnable(GL_DEPTH_TEST);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     // build and compile shaders
     // -------------------------
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader transparentShader("resources/shaders/transparent.vs", "resources/shaders/transparent.fs");
+
+    float transparentVertices[] = {
+            // positions
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            0.0f, -0.5f,  0.0f,  0.0f,  1.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+            1.0f,  0.5f,  0.0f,  1.0f,  0.0f
+    };
+
+    unsigned int transparentVAO, transparentVBO;
+    glGenVertexArrays(1, &transparentVAO);
+    glGenBuffers(1, &transparentVBO);
+    glBindVertexArray(transparentVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, transparentVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices), transparentVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
 
     // load models
     // -----------
+
     Model track("resources/objects/track/track.obj");
     track.SetShaderTextureNamePrefix("material.");
 
-    Model baloons("resources/objects/baloons/baloons.obj");
-    baloons.SetShaderTextureNamePrefix("material.");
+    Model balloons("resources/objects/balloons/balloons.obj");
+    balloons.SetShaderTextureNamePrefix("material.");
 
     Model car1("resources/objects/car1/car.obj");
     car1.SetShaderTextureNamePrefix("material.");
@@ -192,25 +216,37 @@ int main() {
     Model man2("resources/objects/man2/man.obj");
     man2.SetShaderTextureNamePrefix("material.");
 
-    PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(4.0f, 4.0, 15.0);
-    pointLight.ambient = glm::vec3(1, 1, 1);
-    pointLight.diffuse = glm::vec3(1, 1, 1);
-    pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
 
-    pointLight.constant = 1.0f;
-    pointLight.linear = 0.2f;
-    pointLight.quadratic = 0.2f;
+    Model fence("resources/objects/fence/fence.obj");
+    fence.SetShaderTextureNamePrefix("material.");
 
-    DirLight& dirLight = programState->dirLight;
-    dirLight.direction = glm::vec3(-20.0f, -20.0f, 0.0f);
-    dirLight.ambient = glm::vec3(0.5f, 0.5f, 0.5f);
-    dirLight.diffuse = glm::vec3(0.4f,0.2f,0.2);
-    dirLight.specular = glm::vec3(0.1, 0.1, 0.1);
-    dirLight.on = true;
+    vector<vector<glm::vec3>> spotLights = {
+            {glm::vec3(-0.049f, 0.0176f, 3.4953f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(-0.049f, 0.0176f, 3.534f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(0.04, 0.0176f, 3.384f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(0.04, 0.0176f, 3.347f), glm::vec3 (1.0f, 0, 0)}
+    };
 
 
+    unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/fire.png").c_str());
 
+
+    vector<glm::vec3> fires
+            {
+                    glm::vec3(-1.188f, 1.515f, -0.315f),
+                    glm::vec3( 3.012f, 1.1f, 1.0f),
+                    glm::vec3( -3.66f, 0.68f, -0.23f),
+                    glm::vec3(0.6585f, 2.28f, -6.06f),
+                    glm::vec3( 2.327f, 1.612f, -1.81f),
+                    glm::vec3(-8.693f, 1.662f, -1.67f),
+                    glm::vec3(2.74f, 1.34f, 8.987f),
+                    glm::vec3(6.056f, 1.505f, 3.606f),
+                    glm::vec3(7.295f, 1.31f, 0.135f),
+                    glm::vec3(8.519f, 2.05f, 5.4f)
+            };
+
+    transparentShader.use();
+    transparentShader.setInt("texture1", 0);
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -227,29 +263,48 @@ int main() {
         // -----
         processInput(window);
 
+        std::sort(fires.begin(), fires.end(),
+                  [cameraPosition = programState->camera.Position](const glm::vec3& a, const glm::vec3& b) {
+                      float d1 = glm::distance(a, cameraPosition);
+                      float d2 = glm::distance(b, cameraPosition);
+                      return d1 > d2;
+                  });
 
         // render
         // ------
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // don't forget to enable shader before setting uniforms
-        ourShader.use();
-        pointLight.position = glm::vec3(4.0 * 1, 4.0f, 4.0 * 1);
-        ourShader.setVec3("dirLight.direction", dirLight.direction);
-        ourShader.setVec3("dirLight.ambient", dirLight.ambient);
-        ourShader.setVec3("dirLight.diffuse",  dirLight.diffuse);
-        ourShader.setVec3("dirLight.specular", dirLight.specular);
 
-        ourShader.setVec3("pointLight.position", pointLight.position);
-        ourShader.setVec3("pointLight.ambient", pointLight.ambient);
-        ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        ourShader.setVec3("pointLight.specular", pointLight.specular);
-        ourShader.setFloat("pointLight.constant", pointLight.constant);
-        ourShader.setFloat("pointLight.linear", pointLight.linear);
-        ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        ourShader.setVec3("viewPosition", programState->camera.Position);
+
+        //direkciona svetla
+        ourShader.use();
+        ourShader.setVec3("dirLight.direction", glm::vec3(-20.0f, -20.0f, 0.0f));
+        ourShader.setVec3("dirLight.ambient", dirOn*glm::vec3(0.5f, 0.5f, 0.5f));
+        ourShader.setVec3("dirLight.diffuse",  dirOn*glm::vec3(0.2f,0.2f,0.2f));
+        ourShader.setVec3("dirLight.specular", dirOn*glm::vec3(0.1f, 0.1f, 0.1f));
+
+        //spot svetla
+        for(int i = 0; i < spotLights.size(); i++){
+            string tmp = "spotLights[" + to_string(i) + "].";
+
+            ourShader.setVec3(tmp + "position", spotLights[i][0]);
+            ourShader.setVec3(tmp + "direction", spotLights[i][1]);
+            ourShader.setFloat(tmp + "cutOff", glm::cos(glm::radians(8.0f)));
+            ourShader.setFloat(tmp + "outerCutOff", glm::cos(glm::radians(15.0f)));
+
+            ourShader.setVec3(tmp + "ambient", sptOn*glm::vec3(0.1f, 0.1f, 0.1f));
+            ourShader.setVec3(tmp + "diffuse", sptOn*glm::vec3(0.8f, 0.8f, 0.8f));
+            ourShader.setVec3(tmp + "specular", sptOn*glm::vec3(1.0f, 1.0f, 1.0f));
+
+            ourShader.setFloat(tmp + "constant", 1.0f);
+            ourShader.setFloat(tmp + "linear", 0.5f);
+            ourShader.setFloat(tmp + "quadratic", 0.4f);
+        }
         ourShader.setFloat("material.shininess", 32.0f);
+
+        ourShader.setBool("blinn", blinn);
+        ourShader.setVec3("viewPosition", programState->camera.Position);
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
@@ -258,9 +313,13 @@ int main() {
         ourShader.setMat4("view", view);
 
         // render the loaded model
+
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model,
-                               glm::vec3(0, 0, 4.0f));
+
+        //glEnable(GL_CULL_FACE);
+
+        model = glm::mat4(1.0f);
+        model = glm::translate(model,glm::vec3(0, 0, 4.0f));
         model = glm::scale(model, glm::vec3(0.02f, 0.02f, 0.02f));
         ourShader.setMat4("model", model);
         track.Draw(ourShader);
@@ -270,7 +329,7 @@ int main() {
         model = glm::translate(model, glm::vec3(-4.0f, 0, 8.0f));
         model = glm::scale(model, glm::vec3(0.02f, 0.02f, 0.02f));
         ourShader.setMat4("model", model);
-        baloons.Draw(ourShader);
+        balloons.Draw(ourShader);
 
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(-0.08f, 0.0f, 3.515f));
@@ -298,6 +357,34 @@ int main() {
         model = glm::scale(model, glm::vec3(0.02f, 0.02f, 0.02f));
         ourShader.setMat4("model", model);
         man2.Draw(ourShader);
+
+        // Ograda na nekim mestima je jednostrana pa se sa jedne strane ne vidi kada je ukljucen Face culling
+        //glDisable(GL_CULL_FACE);
+
+        model = glm::mat4(1.0f);
+        model = glm::translate(model,glm::vec3(0, 0, 4.0f));
+        model = glm::scale(model, glm::vec3(0.02f, 0.02f, 0.02f));
+        ourShader.setMat4("model", model);
+        fence.Draw(ourShader);
+
+        //sorted blending
+        transparentShader.use();
+        projection = glm::perspective(glm::radians(programState->camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        view = programState->camera.GetViewMatrix();
+        model = glm::mat4(1.0f);
+        transparentShader.setMat4("projection", projection);
+        transparentShader.setMat4("view", view);
+        glBindVertexArray(transparentVAO);
+        glBindTexture(GL_TEXTURE_2D, transparentTexture);
+        for (auto fire : fires)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::rotate(model, float(glfwGetTime()/20.0f), glm::vec3(0, 1.0f, 0));
+            model = glm::translate(model, fire);
+            model = glm::scale(model, glm::vec3(0.018f));
+            transparentShader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -383,12 +470,8 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Text("Hello text");
         ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
         ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
-        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
 
-        ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
+
         ImGui::End();
     }
 
@@ -416,17 +499,65 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
     }
-    if (key == GLFW_KEY_T && action == GLFW_PRESS){
-        if(programState->dirLight.on){
-            programState->dirLight.ambient = glm::vec3(0, 0, 0);
-            programState->dirLight.diffuse = glm::vec3(0,0,0);
-            programState->dirLight.specular = glm::vec3(0, 0, 0);
-            programState->dirLight.on = false;
-        }else{
-            programState->dirLight.ambient = glm::vec3(0.5f, 0.5f, 0.5f);
-            programState->dirLight.diffuse = glm::vec3(0.4f,0.2f,0.2);
-            programState->dirLight.specular = glm::vec3(0.1, 0.1, 0.1);
-            programState->dirLight.on = true;
+    if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+//
+        if (dirOn == 1.0f) {
+            dirOn = 0;
+        } else {
+            dirOn = 1.0f;
         }
     }
+    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+//
+        if (sptOn == 1.0f) {
+            sptOn = 0;
+        } else {
+            sptOn = 1.0f;
+        }
+    }
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+//
+        if (blinn) {
+            blinn = false;
+        } else {
+            blinn = true;
+        }
+    }
+}
+
+unsigned int loadTexture(char const * path)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    int width, height, nrComponents;
+    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data)
+    {
+        GLenum format;
+        if (nrComponents == 1)
+            format = GL_RED;
+        else if (nrComponents == 3)
+            format = GL_RGB;
+        else if (nrComponents == 4)
+            format = GL_RGBA;
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT); // for this tutorial: use GL_CLAMP_TO_EDGE to prevent semi-transparent borders. Due to interpolation it takes texels from next repeat
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+    }
+    else
+    {
+        std::cout << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
+    }
+
+    return textureID;
 }
