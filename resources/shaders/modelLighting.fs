@@ -1,6 +1,20 @@
 #version 330 core
-out vec4 FragColor;
+layout (location = 0) out vec4 FragColor;
+layout (location = 1) out vec4 BrightColor;
 
+
+struct DiffLight {
+    vec3 position;
+
+    vec3 specular;
+    vec3 diffuse;
+    vec3 ambient;
+
+    float constant;
+    float linear;
+    float quadratic;
+    float maxDist;
+};
 
 struct DirLight{
     vec3 direction;
@@ -32,15 +46,35 @@ struct Material {
     float shininess;
 };
 #define NR_SPOT_LIGHTS 4
+#define NR_DIFF_LIGHTS 9
 in vec2 TexCoords;
 in vec3 Normal;
 in vec3 FragPos;
 
+uniform DiffLight diffLights[NR_DIFF_LIGHTS];
 uniform DirLight dirLight;
 uniform Material material;
 uniform SpotLight spotLights[NR_SPOT_LIGHTS];
 uniform vec3 viewPosition;
 uniform bool blinn;
+
+vec3 CalcDiffLight(DiffLight light, vec3 normal, vec3 fragPos, vec3 viewDir)
+{
+    float distance = length(light.position - fragPos);
+    if(distance > light.maxDist){
+        return vec3(0);
+    }
+
+    vec3 lightDir = normalize(light.position - fragPos);
+    float diff = max(dot(normal, lightDir), 0.0);
+
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+    vec3 diffuse = vec3(0);
+    diffuse = light.diffuse * diff * vec3(texture(material.texture_diffuse1, TexCoords));
+
+    diffuse *= attenuation;
+    return diffuse;
+}
 
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
@@ -101,7 +135,7 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 viewDir, vec2 TexCoords, b
     specular *= intensity;
 
     // attenuation
-    float distance    = length(light.position - FragPos);
+    float distance    = 7*length(light.position - FragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
     ambient  *= attenuation;
     diffuse   *= attenuation;
@@ -124,7 +158,16 @@ void main()
     for(int i =0; i < NR_SPOT_LIGHTS; i++){
         result += CalcSpotLight(spotLights[i], Normal, viewDir, TexCoords, blinn);
     }
+    for(int i = 0; i < NR_DIFF_LIGHTS; i++){
+        result += CalcDiffLight(diffLights[i], normal, FragPos, viewDir);
+    }
 
+    float brightness = dot(result, vec3(0.2126, 0.7152, 0.0722));
+
+    if(brightness > 1.0)
+        BrightColor = vec4(result, 1.0);
+    else
+        BrightColor = vec4(0.0, 0.0, 0.0, 1.0);
 
     FragColor = vec4(result, 1.0);
 }

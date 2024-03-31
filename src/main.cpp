@@ -34,8 +34,15 @@ unsigned int loadCubemap(vector<std::string> faces);
 
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+void renderQuad();
+
+// settings
+const unsigned int SCR_WIDTH = 1000;
+const unsigned int SCR_HEIGHT = 800;
+bool bloom = true;
+bool hdr = true;
+bool hdrKeyPressed = false;
+float exposure = 1.0f;
 
 // camera
 
@@ -47,18 +54,24 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-
-
-struct DirLight {
-    glm::vec3 direction;
-    glm::vec3 ambient;
+struct DiffLight {
+    glm::vec3 position;
     glm::vec3 diffuse;
-    glm::vec3 specular;
-    bool on;
+    float constant;
+    float linear;
+    float quadratic;
+    float maxDist;
+    bool OnOff = false;
 };
 
-float dirOn = 1.0f;
+struct SpotLight{
+    glm::vec3 position;
+    glm::vec3 direction;
+};
+
+float dirOn = 0.0f;
 float sptOn = 1.0f;
+float simpleLightOn = 1.0f;
 bool blinn = true;
 
 struct ProgramState {
@@ -175,8 +188,8 @@ int main() {
     Shader ourShader("resources/shaders/modelLighting.vs", "resources/shaders/modelLighting.fs");
     Shader transparentShader("resources/shaders/transparent.vs", "resources/shaders/transparent.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-
-
+    Shader shaderBlur("resources/shaders/bloom.vs", "resources/shaders/bloom.fs");
+    Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
 
 
     float transparentVertices[] = {
@@ -282,34 +295,61 @@ int main() {
     Model fence("resources/objects/fence/fence.obj");
     fence.SetShaderTextureNamePrefix("material.");
 
-    vector<vector<glm::vec3>> spotLights = {
-            {glm::vec3(-0.049f, 0.0176f, 3.4953f), glm::vec3 (1.0f, 0, 0)},
-            {glm::vec3(-0.049f, 0.0176f, 3.534f), glm::vec3 (1.0f, 0, 0)},
-            {glm::vec3(0.04, 0.0176f, 3.384f), glm::vec3 (1.0f, 0, 0)},
-            {glm::vec3(0.04, 0.0176f, 3.347f), glm::vec3 (1.0f, 0, 0)}
+
+    // svetla sa samo difuznom komponentom
+    vector<DiffLight> diffLights;
+    diffLights = {
+            {glm::vec3(0.31f, 0.138f, 3.3967f),glm::vec3(5.0f, 1.0f, 1.0f),
+             1.0f,1.0f,1.0f,0.007f, true},
+            {glm::vec3(0.31f, 0.138f, 3.413f),glm::vec3(5.0f, 1.0f, 1.0f),
+             1.0f,1.0f,1.0f,0.007f, true},
+            {glm::vec3(0.31f, 0.138f, 3.4293f),glm::vec3(5.0f, 1.0f, 1.0f),
+             1.0f,1.0f,1.0f,0.007f, true},
+            {glm::vec3(-0.127f, 0.014f, 3.4957f),glm::vec3(8.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.005f},
+            {glm::vec3(-0.127f, 0.014f, 3.5346f),glm::vec3(8.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.005f},
+            {glm::vec3(-0.0697, 0.0218f, 3.378f),glm::vec3(10.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.0025f},
+            {glm::vec3(-0.0697, 0.0218f, 3.375f), glm::vec3(10.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.0025f},
+            {glm::vec3(-0.0697, 0.0218f, 3.353f), glm::vec3(10.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.0025f},
+            {glm::vec3(-0.0697, 0.0218f, 3.35f), glm::vec3(10.0f, 2.0f, 2.0f),
+             1.0f,1.0f,1.0f,0.0025f},
+
+    };
+
+    vector<SpotLight> spotLights = {
+            {glm::vec3(-0.05f, 0.0167f, 3.4953f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(-0.05f, 0.0167f, 3.534f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(0.037, 0.0176f, 3.384f), glm::vec3 (1.0f, 0, 0)},
+            {glm::vec3(0.037, 0.0176f, 3.3458f), glm::vec3 (1.0f, 0, 0)},
     };
 
 
+    //tekstura za sorted blending
     unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/fire.png").c_str());
-
 
     vector<glm::vec3> fires
             {
-                    glm::vec3(-1.188f, 1.515f, -0.315f),
-                    glm::vec3( 3.012f, 1.1f, 1.0f),
-                    glm::vec3( -3.66f, 0.68f, -0.23f),
-                    glm::vec3(0.6585f, 2.28f, -6.06f),
-                    glm::vec3( 2.327f, 1.612f, -1.81f),
-                    glm::vec3(-8.693f, 1.662f, -1.67f),
-                    glm::vec3(2.74f, 1.34f, 8.987f),
-                    glm::vec3(6.056f, 1.505f, 3.606f),
-                    glm::vec3(7.295f, 1.31f, 0.135f),
-                    glm::vec3(8.519f, 2.05f, 5.4f)
+                    glm::vec3(-1.188f, 2.515f, -0.315f),
+                    glm::vec3( 3.012f, 2.1f, 1.0f),
+                    glm::vec3( -3.66f, 1.68f, -0.23f),
+                    glm::vec3(0.6585f, 3.28f, -6.06f),
+                    glm::vec3( 2.327f, 2.612f, -1.81f),
+                    glm::vec3(-8.693f, 2.662f, -1.67f),
+                    glm::vec3(2.74f, 2.34f, 8.987f),
+                    glm::vec3(6.056f, 2.505f, 3.606f),
+                    glm::vec3(7.295f, 2.31f, 0.135f),
+                    glm::vec3(8.519f, 3.05f, 5.4f)
             };
 
     transparentShader.use();
     transparentShader.setInt("texture1", 0);
 
+
+    //skybox
     vector<std::string> faces
             {
                     FileSystem::getPath("resources/textures/skybox/right.jpg"),
@@ -325,6 +365,64 @@ int main() {
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
+    //hdr i bloom
+    unsigned int hdrFBO;
+    glGenFramebuffers(1, &hdrFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    // create 2 floating point color buffers (1 for normal rendering, other for brightness threshold values)
+    unsigned int colorBuffers[2];
+    glGenTextures(2, colorBuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);  // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        // attach texture to framebuffer
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, colorBuffers[i], 0);
+    }
+    // create and attach depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
+    unsigned int attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
+    // finally check if framebuffer is complete
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // ping-pong-framebuffer for blurring
+    unsigned int pingpongFBO[2];
+    unsigned int pingpongColorbuffers[2];
+    glGenFramebuffers(2, pingpongFBO);
+    glGenTextures(2, pingpongColorbuffers);
+    for (unsigned int i = 0; i < 2; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                        GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pingpongColorbuffers[i], 0);
+        // also check if framebuffers are complete (no need for depth buffer)
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            std::cout << "Framebuffer not complete!" << std::endl;
+    }
+
+    shaderBlur.use();
+    shaderBlur.setInt("image", 0);
+    hdrShader.use();
+    hdrShader.setInt("hdrBuffer", 0);
+    hdrShader.setInt("bloomBlur", 1);
+
 
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -335,7 +433,6 @@ int main() {
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
-
         // input
         processInput(window);
 
@@ -350,26 +447,49 @@ int main() {
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
+        glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         //direkciona svetla
         ourShader.use();
-        ourShader.setVec3("dirLight.direction", glm::vec3(-1.0f, -1.0f, 0.0f));
-        ourShader.setVec3("dirLight.ambient", dirOn*glm::vec3(0.5f, 0.5f, 0.5f));
-        ourShader.setVec3("dirLight.diffuse",  dirOn*glm::vec3(0.2f,0.2f,0.2f));
+
+
+        ourShader.setVec3("dirLight.direction", glm::vec3(0.0f, -1.0f, 0.0f));
+        ourShader.setVec3("dirLight.ambient", dirOn*glm::vec3(0.2f, 0.2f, 0.2f));
+        ourShader.setVec3("dirLight.diffuse",  dirOn*glm::vec3(0.5f,0.5f,0.5f));
         ourShader.setVec3("dirLight.specular", dirOn*glm::vec3(0.1f, 0.1f, 0.1f));
 
-        //spot svetla
+        //svetla na kolima pozadi i startna svetla
+        for(int i = 0; i < diffLights.size(); i++) {
+
+            // za smenjivanje svetala:
+            float OnOff = 1.0f;
+            int x = (int)currentFrame;
+            if(x%4 < i+1 && diffLights[i].OnOff){
+                OnOff = 0;
+            }
+
+            string tmp = "diffLights[" + to_string(i) + "].";
+            ourShader.setVec3(tmp + "position", diffLights[i].position);
+            ourShader.setVec3(tmp + "diffuse", OnOff * simpleLightOn * diffLights[i].diffuse);
+            ourShader.setFloat(tmp + "constant", diffLights[i].constant);
+            ourShader.setFloat(tmp + "linear", diffLights[i].linear);
+            ourShader.setFloat(tmp + "quadratic", diffLights[i].quadratic);
+            ourShader.setFloat(tmp + "maxDist", diffLights[i].maxDist);
+        }
+
+        ourShader.setVec3("viewPosition", programState->camera.Position);
+        //spot svetla na kolima napred
         for(int i = 0; i < spotLights.size(); i++){
             string tmp = "spotLights[" + to_string(i) + "].";
 
-            ourShader.setVec3(tmp + "position", spotLights[i][0]);
-            ourShader.setVec3(tmp + "direction", spotLights[i][1]);
+            ourShader.setVec3(tmp + "position", spotLights[i].position);
+            ourShader.setVec3(tmp + "direction", spotLights[i].direction);
             ourShader.setFloat(tmp + "cutOff", glm::cos(glm::radians(8.0f)));
             ourShader.setFloat(tmp + "outerCutOff", glm::cos(glm::radians(15.0f)));
 
             ourShader.setVec3(tmp + "ambient", sptOn*glm::vec3(0.1f, 0.1f, 0.1f));
-            ourShader.setVec3(tmp + "diffuse", sptOn*glm::vec3(0.8f, 0.8f, 0.8f));
+            ourShader.setVec3(tmp + "diffuse", sptOn*glm::vec3(8.0f, 8.0f, 12.0f));
             ourShader.setVec3(tmp + "specular", sptOn*glm::vec3(1.0f, 1.0f, 1.0f));
 
             ourShader.setFloat(tmp + "constant", 1.0f);
@@ -387,8 +507,6 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // render the loaded model
-
         glm::mat4 model = glm::mat4(1.0f);
 
         glEnable(GL_CULL_FACE);
@@ -401,7 +519,7 @@ int main() {
 
         model = glm::mat4(1.0f);
         model = glm::rotate(model, float(glfwGetTime()/20.0f), glm::vec3(0, 1.0f, 0));
-        model = glm::translate(model, glm::vec3(-4.0f, 0, 8.0f));
+        model = glm::translate(model, glm::vec3(-4.0f, 1.0f, 8.0f));
         model = glm::scale(model, glm::vec3(0.02f, 0.02f, 0.02f));
         ourShader.setMat4("model", model);
         balloons.Draw(ourShader);
@@ -443,12 +561,11 @@ int main() {
         fence.Draw(ourShader);
 
         //skybox
-        glDepthFunc(GL_LEQUAL); // change depth function so depth test passes when values are equal to depth buffer's content
+        glDepthFunc(GL_LEQUAL);
         skyboxShader.use();
-        view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix())); // remove translation from the view matrix
+        view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix()));
         skyboxShader.setMat4("view", view);
         skyboxShader.setMat4("projection", projection);
-        // skybox cube
         glBindVertexArray(skyboxVAO);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
@@ -457,6 +574,7 @@ int main() {
         glDepthFunc(GL_LESS); // set depth function back to default
 
         //sorted blending
+        //posle skybox-a jer se u suprotnom vidi background color
         transparentShader.use();
         projection = glm::perspective(glm::radians(programState->camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         view = programState->camera.GetViewMatrix();
@@ -475,14 +593,43 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        //HDR i Bloom
+        bool horizontal = true, first_iteration = true;
+        unsigned int amount = 10;
+        shaderBlur.use();
+        for (unsigned int i = 0; i < amount; i++)
+        {
+            glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
+            shaderBlur.setInt("horizontal", horizontal);
+            glBindTexture(GL_TEXTURE_2D, first_iteration ? colorBuffers[1] : pingpongColorbuffers[!horizontal]);  // bind texture of other framebuffer (or scene if first iteration)
+            renderQuad();
+            horizontal = !horizontal;
+            if (first_iteration)
+                first_iteration = false;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // 3. now render floating point color buffer to 2D quad and tonemap HDR colors to default framebuffer's (clamped) color range
+        // --------------------------------------------------------------------------------------------------------------------------
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        hdrShader.use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[0]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[!horizontal]);
+        hdrShader.setBool("hdr", hdr);
+        hdrShader.setBool("bloom", bloom);
+        hdrShader.setFloat("exposure", exposure);
+        renderQuad();
+
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
 
 
 
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
@@ -496,6 +643,36 @@ int main() {
     // ------------------------------------------------------------------
     glfwTerminate();
     return 0;
+}
+
+
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+                // positions        // texture Coords
+                -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+                -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
@@ -512,6 +689,28 @@ void processInput(GLFWwindow *window) {
         programState->camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !hdrKeyPressed)
+    {
+        hdr = !hdr;
+        hdrKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
+    {
+        hdrKeyPressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+    {
+        if (exposure > 0.005f)
+            exposure -= 0.005f;
+        else
+            exposure = 0.0f;
+    }
+    else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+    {
+        exposure += 0.005f;
+    }
 
 }
 
@@ -589,25 +788,37 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
     }
+
     if (key == GLFW_KEY_T && action == GLFW_PRESS) {
-//
         if (dirOn == 1.0f) {
             dirOn = 0;
         } else {
             dirOn = 1.0f;
         }
     }
+
     if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-//
         if (sptOn == 1.0f) {
             sptOn = 0;
         } else {
             sptOn = 1.0f;
         }
     }
+
     if (key == GLFW_KEY_P && action == GLFW_PRESS) {
-//
         blinn = !blinn;
+    }
+
+    if (key == GLFW_KEY_O && action == GLFW_PRESS) {
+        if (simpleLightOn == 1.0f) {
+            simpleLightOn = 0;
+        } else {
+            simpleLightOn = 1.0f;
+        }
+    }
+
+    if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+        bloom = !bloom;
     }
 }
 
