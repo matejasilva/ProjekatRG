@@ -1,3 +1,1 @@
-# Dodat skybox
-
-Obavezan deo i cubemaps gotovi
+# Ubačeni hdr i bloom
