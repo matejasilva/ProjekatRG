@@ -6,9 +6,7 @@ layout (location = 1) out vec4 BrightColor;
 struct DiffLight {
     vec3 position;
 
-    vec3 specular;
     vec3 diffuse;
-    vec3 ambient;
 
     float constant;
     float linear;
@@ -80,9 +78,7 @@ vec3 CalcDiffLight(DiffLight light, vec3 normal, vec3 fragPos, vec3 viewDir)
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
 {
     vec3 lightDir = normalize(-light.direction);
-    // diffuse shading
     float diff = max(dot(normal, lightDir), 0.0);
-    // specular shading
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float spec = 0.0;
     if(blinn)
@@ -95,7 +91,6 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
         vec3 reflectDir = reflect(-lightDir, normal);
         spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
     }
-    // combine results
     vec3 ambient = light.ambient * vec3(texture(material.texture_diffuse1, TexCoords));
     vec3 diffuse = light.diffuse * diff * vec3(texture(material.texture_diffuse1, TexCoords));
     vec3 specular = light.specular * spec * vec3(texture(material.texture_specular1, TexCoords).xxx);
@@ -103,16 +98,14 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
 }
 
 vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 viewDir, vec2 TexCoords, bool blinn){
-    // ambient
+
     vec3 ambient = light.ambient * texture(material.texture_diffuse1, TexCoords).rgb;
 
-    // diffuse
     vec3 norm = normalize(Normal);
     vec3 lightDir = normalize(light.position - FragPos);
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 diffuse = light.diffuse * diff * texture(material.texture_diffuse1, TexCoords).rgb;
 
-    //specular
     float spec = 0.0;
     if(blinn)
     {
@@ -127,14 +120,12 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 viewDir, vec2 TexCoords, b
 
     vec3 specular = light.specular * spec * texture(material.texture_specular1, TexCoords).rgb;
 
-    // spotlight (soft edges)
     float theta = dot(lightDir, normalize(-light.direction));
     float epsilon = (light.cutOff - light.outerCutOff);
     float intensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
     diffuse  *= intensity;
     specular *= intensity;
 
-    // attenuation
     float distance    = 7*length(light.position - FragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
     ambient  *= attenuation;
@@ -155,7 +146,7 @@ void main()
     vec3 viewDir = normalize(viewPosition - FragPos);
     vec3 result = CalcDirLight(dirLight, normal, viewDir);
 
-    for(int i =0; i < NR_SPOT_LIGHTS; i++){
+    for(int i = 0; i < NR_SPOT_LIGHTS; i++){
         result += CalcSpotLight(spotLights[i], Normal, viewDir, TexCoords, blinn);
     }
     for(int i = 0; i < NR_DIFF_LIGHTS; i++){

@@ -296,14 +296,14 @@ int main() {
     fence.SetShaderTextureNamePrefix("material.");
 
 
-    // svetla sa samo difuznom komponentom
+    // point lights sa samo difuznom komponentom
     vector<DiffLight> diffLights;
     diffLights = {
             {glm::vec3(0.31f, 0.138f, 3.3967f),glm::vec3(5.0f, 1.0f, 1.0f),
              1.0f,1.0f,1.0f,0.007f, true},
-            {glm::vec3(0.31f, 0.138f, 3.413f),glm::vec3(5.0f, 1.0f, 1.0f),
+            {glm::vec3(0.31f, 0.138f, 3.4125f),glm::vec3(5.0f, 1.0f, 1.0f),
              1.0f,1.0f,1.0f,0.007f, true},
-            {glm::vec3(0.31f, 0.138f, 3.4293f),glm::vec3(5.0f, 1.0f, 1.0f),
+            {glm::vec3(0.31f, 0.138f, 3.428f),glm::vec3(5.0f, 1.0f, 1.0f),
              1.0f,1.0f,1.0f,0.007f, true},
             {glm::vec3(-0.127f, 0.014f, 3.4957f),glm::vec3(8.0f, 2.0f, 2.0f),
              1.0f,1.0f,1.0f,0.005f},
@@ -412,7 +412,6 @@ int main() {
                         GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pingpongColorbuffers[i], 0);
-        // also check if framebuffers are complete (no need for depth buffer)
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
             std::cout << "Framebuffer not complete!" << std::endl;
     }
@@ -462,9 +461,10 @@ int main() {
         //svetla na kolima pozadi i startna svetla
         for(int i = 0; i < diffLights.size(); i++) {
 
-            // za smenjivanje svetala:
+            // za smenjivanje startnih svetala:
             float OnOff = 1.0f;
             int x = (int)currentFrame;
+            //svetla se pale piramidalno i gase u isto vreme
             if(x%4 < i+1 && diffLights[i].OnOff){
                 OnOff = 0;
             }
@@ -490,7 +490,7 @@ int main() {
 
             ourShader.setVec3(tmp + "ambient", sptOn*glm::vec3(0.1f, 0.1f, 0.1f));
             ourShader.setVec3(tmp + "diffuse", sptOn*glm::vec3(8.0f, 8.0f, 12.0f));
-            ourShader.setVec3(tmp + "specular", sptOn*glm::vec3(1.0f, 1.0f, 1.0f));
+            ourShader.setVec3(tmp + "specular", sptOn*glm::vec3(2.0f, 2.0f, 2.0f));
 
             ourShader.setFloat(tmp + "constant", 1.0f);
             ourShader.setFloat(tmp + "linear", 0.8f);
@@ -611,8 +611,6 @@ int main() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        // 3. now render floating point color buffer to 2D quad and tonemap HDR colors to default framebuffer's (clamped) color range
-        // --------------------------------------------------------------------------------------------------------------------------
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         hdrShader.use();
         glActiveTexture(GL_TEXTURE0);
@@ -623,7 +621,6 @@ int main() {
         hdrShader.setBool("bloom", bloom);
         hdrShader.setFloat("exposure", exposure);
         renderQuad();
-
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -690,12 +687,12 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !hdrKeyPressed)
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && !hdrKeyPressed)
     {
         hdr = !hdr;
         hdrKeyPressed = true;
     }
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_RELEASE)
     {
         hdrKeyPressed = false;
     }
@@ -753,16 +750,16 @@ void DrawImGui(ProgramState *programState) {
     ImGui::NewFrame();
 
 
-    {
-        static float f = 0.0f;
-        ImGui::Begin("Hello window");
-        ImGui::Text("Hello text");
-        ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
-        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-
-
-        ImGui::End();
-    }
+//    {
+//        static float f = 0.0f;
+//        ImGui::Begin("Hello window");
+//        ImGui::Text("Hello text");
+//        ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
+//        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
+//
+//
+//        ImGui::End();
+//    }
 
     {
         ImGui::Begin("Camera info");
